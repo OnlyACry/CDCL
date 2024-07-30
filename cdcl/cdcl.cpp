@@ -8,6 +8,7 @@
 #include <array>
 #include <iostream>
 #include <chrono>
+#include <queue>
 //extern "C" {
 //#include <unistd.h>
 //}
@@ -67,7 +68,7 @@ array<int, 2> luby_seq{ 1, 1 }; // reluctant doubling
 vector<uint> decision; // for parital restarts
 vector<pair<uint, bool>> stack; // only used in `analyze`
 vector<uint> trash; // only used in `analyze`
-
+queue<int> var_queue;
 bool defined(uint var) {
     return (model[var] & MODEL_DEFINED) != 0;
 }
@@ -218,6 +219,87 @@ void update_score(clause* c) {
     trash.clear();
 }
 
+void _analyze(clause* conflict)
+{
+    learnt.push_back(0);
+    for (uint i = 0; i < conflict->num_lit; ++i)
+    {
+        int lit = conflict->lits[i];
+        uint v = abs(lit);
+        uint lv = level[v];
+        if (lv == 0)
+            continue;
+        seen[v] = true;
+        if (lv < decision_level)
+        {
+            //seen[v] = false;
+            learnt.push_back(lit);
+        }
+        else 
+            var_queue.push(v);
+        bump_activity_vsids(v);
+    }
+    int uip;
+    while (!var_queue.empty())
+    {
+        int lit = var_queue.front();
+        uint v = abs(lit);
+        var_queue.pop();
+        if (var_queue.size() == 1)
+        {
+            uip = lit;
+            break;
+        }
+        seen[v] = false;
+        auto c = reason[v];
+        for (uint i = 1; i < c->num_lit; ++i)
+        {
+            int lit = c->lits[i];
+            uint v = abs(lit);
+            uint lv = level[v];
+            if (lv == 0)    ///第0层是？应该没有第0层的吧
+                continue;
+            if (lv < decision_level)
+            {
+                learnt.push_back(lit);
+            }
+            else {
+                seen[v] = true;
+                var_queue.push(lit);
+            }
+        }
+    }
+    learnt[0] = -uip;
+    uint max_lv = 0;
+    uint num_lit = learnt.size();
+    for (uint i = 1; i < num_lit; ++i) {
+        uint lv = level[abs(learnt[i])];
+        if (lv > max_lv) {
+            max_lv = lv;
+            swap(learnt[1], learnt[i]);
+        }
+    }
+    backjump(max_lv);
+    if (num_lit == 1) {
+        push(-uip, nullptr);
+        learnt.clear();
+        return;
+    }
+    // learn new clause
+    auto c = make_clause(learnt, CLAUSE_LEARNT, 0);
+    update_score(c);
+    push(-uip, c);
+    learnt.clear();
+    if (num_lit == 2 || c->score <= 2) {
+        db.push_front(c);
+        ++db_num_persistent;
+    }
+    else {
+        db.push_back(c);
+    }
+    watch_clause(c);
+}
+
 void analyze(clause* conflict) {
     learnt.push_back(0); // reserve learnt[0] for UIP
     uint count = 0;
@@ -249,6 +331,11 @@ void analyze(clause* conflict) {
             break;
         }
         auto c = reason[v];
+        /*for (int i = 0; i < c->num_lit; i++)
+        {
+            printf("%d\t", c->lits[i]);
+        }
+        printf("\n");*/
         for (uint i = 1; i < c->num_lit; ++i) {
             int lit = c->lits[i];
             uint v = abs(lit);
@@ -559,13 +646,13 @@ void usage() {
 }
 
 int main(int argc, char* argv[]) {
-    // 检查是否提供了足够的参数
-    if (argc != 2) {
+    //检查是否提供了足够的参数
+    /*if (argc != 2) {
         cout << "Usage: " << argv[0] << " <file_path>" << endl;
         return 1;
     }
-    const char* file_path = argv[1];
-    //const char* file_path = "D:\\DESKTOP\\SAT\\DPLL\\DPLL-Learn\\test\\SAT_training_instance_test\\hard\\mp1-blockpuzzle_9x9_s1_free8.cnf";
+    const char* file_path = argv[1];*/
+    const char* file_path = "D:\\DESKTOP\\SAT\\DPLL\\DPLL-Learn\\test\\SAT_training_instance_test\\simple\\2bitadd_12.cnf";
     if (1) {
         if (freopen(file_path, "r", stdin) == NULL) {
             perror("could not open input file");
