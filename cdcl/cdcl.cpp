@@ -221,6 +221,7 @@ void update_score(clause* c) {
 
 void _analyze(clause* conflict)
 {
+    trail.size();
     learnt.push_back(0);
     for (uint i = 0; i < conflict->num_lit; ++i)
     {
@@ -232,11 +233,12 @@ void _analyze(clause* conflict)
         seen[v] = true;
         if (lv < decision_level)
         {
-            //seen[v] = false;
             learnt.push_back(lit);
         }
-        else 
+        else
+        {
             var_queue.push(v);
+        }
         bump_activity_vsids(v);
     }
     int uip;
@@ -244,29 +246,34 @@ void _analyze(clause* conflict)
     {
         int lit = var_queue.front();
         uint v = abs(lit);
+        if (!seen[v]) continue;
         var_queue.pop();
-        if (var_queue.size() == 1)
+        seen[v] = false;
+        ///出现取空可能是因为取到了当前层的第一个决策变元
+        ///而没有在第一个FUIP停下来
+        if (var_queue.size() == 0)
         {
             uip = lit;
             break;
         }
-        seen[v] = false;
         auto c = reason[v];
         for (uint i = 1; i < c->num_lit; ++i)
         {
             int lit = c->lits[i];
             uint v = abs(lit);
+            if (seen[v]) continue;
             uint lv = level[v];
             if (lv == 0)    ///第0层是？应该没有第0层的吧
                 continue;
+            seen[v] = true;
             if (lv < decision_level)
             {
                 learnt.push_back(lit);
             }
             else {
-                seen[v] = true;
                 var_queue.push(lit);
             }
+            bump_activity_vsids(v);
         }
     }
     learnt[0] = -uip;
@@ -601,7 +608,7 @@ bool solve() {
         while (auto conflict = find_conflict()) {
             if (decision_level == 0)
                 return false;
-            analyze(*conflict);
+            _analyze(*conflict);
             ++backoff_timer;
             if (backoff_timer >= backoff_limit) {
                 backoff_timer = 0;
